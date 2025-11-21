@@ -137,14 +137,18 @@ vec3 temp_to_color(float temp_kelvin){
 // for reference
 
 // Calculates the radius of the Innermost Stable Circular Orbit (ISCO) for a Kerr black hole.
-float get_isco_radius(float a) {
-    float M = 0.5;
-    float Z1 = 1.0 + pow(1.0 - a*a, 1.0/3.0) * (pow(1.0 + a, 1.0/3.0) + pow(1.0 - a, 1.0/3.0));
-    float Z2 = sqrt(3.0 * a*a + Z1*Z1);
+float get_isco_radius(float a, float M) {
+    // a is the UNNORMALIZED spin parameter
+    float a_norm = a / M;
+    float Z1 = 1.0 + pow(1.0 - a_norm*a_norm, 1.0/3.0) * (pow(1.0 + a_norm, 1.0/3.0) + pow(1.0 - a_norm, 1.0/3.0));
+    float Z2 = sqrt(3.0 * a_norm*a_norm + Z1*Z1);
     return M * (3.0 + Z2 - sqrt((3.0 - Z1) * (3.0 + Z1 + 2.0 * Z2)));
 }
 
 void main()	{
+  float M = 0.5;
+  float a = spin * M; // Convert normalized spin to unnormalized 'a'
+
   // z towards you, y towards up, x towards your left
   //  float hfov = (2.0 * ((uv.x+0.5)/resolution.x) - 1.0) * d * resolution.x/resolution.y;
   // float vfov = (1.0 - 2.0 * ((uv.y+0.5)/resolution.y)) * d;
@@ -198,25 +202,23 @@ void main()	{
 
     // RK4 Integration
     vec3 k1_v = STEP * velocity;
-    vec3 k1_a = STEP * kerr_acceleration(point, velocity, spin);
+    vec3 k1_a = STEP * kerr_acceleration(point, velocity, a);
 
     vec3 k2_v = STEP * (velocity + 0.5 * k1_a);
-    vec3 k2_a = STEP * kerr_acceleration(point + 0.5 * k1_v, velocity + 0.5 * k1_a, spin);
+    vec3 k2_a = STEP * kerr_acceleration(point + 0.5 * k1_v, velocity + 0.5 * k1_a, a);
 
     vec3 k3_v = STEP * (velocity + 0.5 * k2_a);
-    vec3 k3_a = STEP * kerr_acceleration(point + 0.5 * k2_v, velocity + 0.5 * k2_a, spin);
+    vec3 k3_a = STEP * kerr_acceleration(point + 0.5 * k2_v, velocity + 0.5 * k2_a, a);
     
     vec3 k4_v = STEP * (velocity + k3_a);
-    vec3 k4_a = STEP * kerr_acceleration(point + k3_v, velocity + k3_a, spin);
+    vec3 k4_a = STEP * kerr_acceleration(point + k3_v, velocity + k3_a, a);
 
     point += (k1_v + 2.0*k2_v + 2.0*k3_v + k4_v) / 6.0;
     velocity += (k1_a + 2.0*k2_a + 2.0*k3_a + k4_a) / 6.0;
 
     // Event Horizon Check
     // For a spinning black hole, the event horizon is at r = M + sqrt(M^2 - a^2)
-    // M = 0.5, so r = 0.5 + sqrt(0.25 - spin^2)
-    float M = 0.5;
-    float horizon_radius = M + sqrt(M*M - spin*spin);
+    float horizon_radius = M + sqrt(M*M - a*a);
     distance = length(point);
 
     if ( distance < 0.0) break;
@@ -234,16 +236,14 @@ void main()	{
         float lambda = - oldpoint.y/velocity.y;
         vec3 intersection = oldpoint + lambda*velocity;
         float r = length(intersection);//dot(intersection,intersection);
-        float disk_in = get_isco_radius(spin);
+        float disk_in = get_isco_radius(a, M);
         if (disk_in <= r && r <= disk_in + DISK_WIDTH ){
           float phi = atan(intersection.x, intersection.z);
           
-          // physically correct orbital velocity for schwarzschild blackhole
-          // v = sqrt(M/r), where M=0.5 in our units (Rs=1 => 2M=1 => M=0.5)
-          float speed = sqrt(0.5 / r);
-          // velocity vector is speed * tangential direction.
-          // The direction is perpendicular to the position vector (x,0,z) and lies in the xz-plane, so (-z,0,x).
-          // We normalize it by dividing by r.
+          // Physically correct orbital velocity for a prograde (co-rotating)
+          // accretion disk around a Kerr black hole.
+          float omega = sqrt(M) / (pow(r, 1.5) + a * sqrt(M));
+          float speed = omega * r;
           vec3 disk_velocity = speed * vec3(-intersection.z, 0.0, intersection.x) / r;
           phi -= time;//length(r);
           phi = mod(phi , PI*2.0);
@@ -265,8 +265,10 @@ void main()	{
           // use blackbody 
           float disk_temperature = 10000.0*(pow(r/disk_in, -3.0/4.0));
           
-          // gravitational redshift
-          disk_temperature *= sqrt(1.0 - 1.0/r);
+          // Gravitational redshift for a Kerr black hole
+          float redshift_numerator = 1.0 + a * sqrt(M) / pow(r, 1.5);
+          float redshift_denominator = sqrt(1.0 - 3.0 * M / r + 2.0 * a * sqrt(M) / pow(r, 1.5));
+          disk_temperature /= (redshift_numerator / redshift_denominator); // Apply redshift factor
 
             //doppler effect
           if (doppler_shift)
