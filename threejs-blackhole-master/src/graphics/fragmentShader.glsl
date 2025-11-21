@@ -184,7 +184,13 @@ void main()	{
         if (DISK_IN <= r&&r <= DISK_IN+DISK_WIDTH ){
           float phi = atan(intersection.x, intersection.z);
           
-          vec3 disk_velocity = vec3(-intersection.x, 0.0, intersection.z)/sqrt(2.0*(r-1.0))/(r*r); 
+          // physically correct orbital velocity for schwarzschild blackhole
+          // v = sqrt(M/r), where M=0.5 in our units (Rs=1 => 2M=1 => M=0.5)
+          float speed = sqrt(0.5 / r);
+          // velocity vector is speed * tangential direction.
+          // The direction is perpendicular to the position vector (x,0,z) and lies in the xz-plane, so (-z,0,x).
+          // We normalize it by dividing by r.
+          vec3 disk_velocity = speed * vec3(-intersection.z, 0.0, intersection.x) / r;
           phi -= time;//length(r);
           phi = mod(phi , PI*2.0);
           float disk_gamma = 1.0/sqrt(1.0-dot(disk_velocity, disk_velocity));
