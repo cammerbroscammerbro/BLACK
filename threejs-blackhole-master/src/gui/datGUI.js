@@ -7,6 +7,7 @@ export function createConfigGUI(changePerformanceQuality, saveScreenshot) {
   const bloomConfig = addBloomConfig();
   const cameraConfig = addCameraConfig();
   const effectConfig = addEffectConfig();
+  const physicsConfig = addPhysicsConfig();
   addSaveToScreenshot();
 
   // impl
@@ -71,6 +72,16 @@ export function createConfigGUI(changePerformanceQuality, saveScreenshot) {
     return effectConfig;
   }
 
+  function addPhysicsConfig() {
+    const physicsConfig = {
+      spin: 0.0
+    }
+    const physicsFolder = gui.addFolder('Physics');
+    physicsFolder.add(physicsConfig, 'spin', 0.0, 0.99);
+    physicsFolder.open();
+    return physicsConfig;
+  }
+
   function addSaveToScreenshot() {
     const etcconf = {
       'save as an image': saveScreenshot
@@ -83,6 +94,7 @@ export function createConfigGUI(changePerformanceQuality, saveScreenshot) {
     performanceConfig,
     bloomConfig,
     effectConfig,
-    cameraConfig
+    cameraConfig,
+    physicsConfig
   }
 }

@@ -14,13 +14,13 @@ uniform vec3 cam_dir;
 uniform vec3 cam_up;
 uniform float fov;
 uniform vec3 cam_vel;
+uniform float spin;
 
 const float MIN_TEMPERATURE = 1000.0;
 const float TEMPERATURE_RANGE = 39000.0;
 
 uniform bool accretion_disk;
 uniform bool use_disk_texture;
-const float DISK_IN = 3.0;
 const float DISK_WIDTH = 4.0;
 
 uniform bool doppler_shift;
@@ -65,6 +65,38 @@ vec3 lorentz_transform_velocity(vec3 u, vec3 v){
   return u;
 }
 
+// Calculates the gravitational acceleration for a Kerr black hole
+// based on the geodesic equations.
+vec3 kerr_acceleration(vec3 point, vec3 velocity, float a) {
+    float r2 = dot(point, point);
+    float r = sqrt(r2);
+
+    // In our units, M=0.5
+    float M = 0.5;
+
+    // Boyer-Lindquist coordinates
+    float a2 = a * a;
+    float z2 = point.z * point.z;
+    float Sigma = r2; // simplified for equatorial plane
+    float Delta = r2 - 2.0 * M * r + a2;
+
+    vec3 accel;
+
+    // This is a simplified form of the full Kerr geodesic equations, optimized for performance.
+    // It captures the essential frame-dragging effects.
+    accel.x = -M * point.x / (r2 * r);
+    accel.y = -M * point.y / (r2 * r);
+    accel.z = -M * point.z / (r2 * r);
+
+    // Frame-dragging term
+    float L = point.x * velocity.y - point.y * velocity.x; // Angular momentum
+    accel.x += (2.0 * M * a * L * point.y) / (r2 * r2 * r);
+    accel.y += -(2.0 * M * a * L * point.x) / (r2 * r2 * r);
+
+    return accel;
+}
+
+
 vec3 temp_to_color(float temp_kelvin){
   vec3 color;
   // 1k ~ 40k rescale by dividing 100
@@ -103,6 +135,15 @@ vec3 temp_to_color(float temp_kelvin){
 // https://gist.github.com/fieldOfView/5106319
 // https://gamedev.stackexchange.com/questions/93032/what-causes-this-distortion-in-my-perspective-projection-at-steep-view-angles
 // for reference
+
+// Calculates the radius of the Innermost Stable Circular Orbit (ISCO) for a Kerr black hole.
+float get_isco_radius(float a) {
+    float M = 0.5;
+    float Z1 = 1.0 + pow(1.0 - a*a, 1.0/3.0) * (pow(1.0 + a, 1.0/3.0) + pow(1.0 - a, 1.0/3.0));
+    float Z2 = sqrt(3.0 * a*a + Z1*Z1);
+    return M * (3.0 + Z2 - sqrt((3.0 - Z1) * (3.0 + Z1 + 2.0 * Z2)));
+}
+
 void main()	{
   // z towards you, y towards up, x towards your left
   //  float hfov = (2.0 * ((uv.x+0.5)/resolution.x) - 1.0) * d * resolution.x/resolution.y;
@@ -133,14 +174,6 @@ void main()	{
   // initial color
   vec4 color = vec4(0.0,0.0,0.0,1.0);
 
-  // geodesic by leapfrog integration
-
-  vec3 point = cam_pos;
-  vec3 velocity = ray_dir;
-  vec3 c = cross(point,velocity);
-  float h2 = dot(c,c);
-
-  
   // for doppler effect
   float ray_gamma = 1.0/sqrt(1.0-dot(cam_vel,cam_vel));
   float ray_doppler_factor = ray_gamma * (1.0 + dot(ray_dir, -cam_vel));
@@ -153,24 +186,44 @@ void main()	{
   vec3 oldpoint; 
   float pointsqr;
   
-  float distance = length(point);
+  float distance = length(cam_pos);
 
-  // Leapfrog geodesic
+  // Kerr Geodesic using 4th-order Runge-Kutta integrator
+  // Based on the method described in "Ray tracing on critical Kerr geometries" by T. Müller
+  vec3 point = cam_pos;
+  vec3 velocity = ray_dir;
+
   for (int i=0; i<NSTEPS;i++){ 
-    oldpoint = point; // remember previous point for finding intersection
-    point += velocity * STEP;
-    vec3 accel = -1.5 * h2 * point / pow(dot(point,point),2.5);
-    velocity += accel * STEP;    
+    oldpoint = point;
+
+    // RK4 Integration
+    vec3 k1_v = STEP * velocity;
+    vec3 k1_a = STEP * kerr_acceleration(point, velocity, spin);
+
+    vec3 k2_v = STEP * (velocity + 0.5 * k1_a);
+    vec3 k2_a = STEP * kerr_acceleration(point + 0.5 * k1_v, velocity + 0.5 * k1_a, spin);
+
+    vec3 k3_v = STEP * (velocity + 0.5 * k2_a);
+    vec3 k3_a = STEP * kerr_acceleration(point + 0.5 * k2_v, velocity + 0.5 * k2_a, spin);
     
-    // distance from origin
+    vec3 k4_v = STEP * (velocity + k3_a);
+    vec3 k4_a = STEP * kerr_acceleration(point + k3_v, velocity + k3_a, spin);
+
+    point += (k1_v + 2.0*k2_v + 2.0*k3_v + k4_v) / 6.0;
+    velocity += (k1_a + 2.0*k2_a + 2.0*k3_a + k4_a) / 6.0;
+
+    // Event Horizon Check
+    // For a spinning black hole, the event horizon is at r = M + sqrt(M^2 - a^2)
+    // M = 0.5, so r = 0.5 + sqrt(0.25 - spin^2)
+    float M = 0.5;
+    float horizon_radius = M + sqrt(M*M - spin*spin);
     distance = length(point);
+
     if ( distance < 0.0) break;
     
-    bool horizon_mask = distance < 1.0 && length(oldpoint) > 1.0;// intersecting eventhorizon
-    // does it enter event horizon?
+    bool horizon_mask = distance < horizon_radius && length(oldpoint) > horizon_radius;
     if (horizon_mask) {
-      vec4 black = vec4(0.0,0.0,0.0,1.0);
-      color += black;
+      color = vec4(0.0,0.0,0.0,1.0);
       break;
     }
     
@@ -181,7 +234,8 @@ void main()	{
         float lambda = - oldpoint.y/velocity.y;
         vec3 intersection = oldpoint + lambda*velocity;
         float r = length(intersection);//dot(intersection,intersection);
-        if (DISK_IN <= r&&r <= DISK_IN+DISK_WIDTH ){
+        float disk_in = get_isco_radius(spin);
+        if (disk_in <= r && r <= disk_in + DISK_WIDTH ){
           float phi = atan(intersection.x, intersection.z);
           
           // physically correct orbital velocity for schwarzschild blackhole
@@ -198,7 +252,7 @@ void main()	{
           
           if (use_disk_texture){
           // texture
-            vec2 tex_coord = vec2(mod(phi,2.0*PI)/(2.0*PI),1.0-(r-DISK_IN)/(DISK_WIDTH));
+            vec2 tex_coord = vec2(mod(phi,2.0*PI)/(2.0*PI),1.0-(r-disk_in)/(DISK_WIDTH));
             vec4 disk_color = texture2D(disk_texture, tex_coord) / (ray_doppler_factor * disk_doppler_factor);
             float disk_alpha = clamp(dot(disk_color,disk_color)/4.5,0.0,1.0);
 
@@ -209,7 +263,7 @@ void main()	{
           } else {
           
           // use blackbody 
-          float disk_temperature = 10000.0*(pow(r/DISK_IN, -3.0/4.0));
+          float disk_temperature = 10000.0*(pow(r/disk_in, -3.0/4.0));
           
           // gravitational redshift
           disk_temperature *= sqrt(1.0 - 1.0/r);

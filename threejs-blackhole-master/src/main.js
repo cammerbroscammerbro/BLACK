@@ -25,6 +25,7 @@ const uniforms = {
   cam_dir: { type: "v3", value: new THREE.Vector3() },
   cam_up: { type: "v3", value: new THREE.Vector3() },
   fov: { type: "f", value: 0.0 },
+  spin: { type: "f", value: 0.0 },
   bg_texture: { type: "t", value: null },
   star_texture: { type: "t", value: null },
   disk_texture: { type: "t", value: null }
@@ -47,7 +48,7 @@ const { observer, cameraControl } = createCamera(renderer);
 scene.add(observer)
 
 // GUI
-const { cameraConfig, effectConfig, performanceConfig, bloomConfig } = createConfigGUI(changePerformanceQuality, saveToScreenshot);
+const { cameraConfig, effectConfig, performanceConfig, bloomConfig, physicsConfig } = createConfigGUI(changePerformanceQuality, saveToScreenshot);
 const stats = createStatsGUI();
 document.body.appendChild(stats.dom);
 
@@ -116,6 +117,8 @@ function updateUniforms() {
   uniforms.use_disk_texture.value = effectConfig.use_disk_texture
   uniforms.doppler_shift.value = effectConfig.doppler_shift
   uniforms.beaming.value = effectConfig.beaming
+
+  uniforms.spin.value = physicsConfig.spin;
 }
 
 // https://r105.threejsfundamentals.org/threejs/lessons/threejs-tips.html
