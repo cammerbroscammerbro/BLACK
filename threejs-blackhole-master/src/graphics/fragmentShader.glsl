@@ -14,7 +14,6 @@ uniform vec3 cam_dir;
 uniform vec3 cam_up;
 uniform float fov;
 uniform vec3 cam_vel;
-uniform float spin;
 
 const float MIN_TEMPERATURE = 1000.0;
 const float TEMPERATURE_RANGE = 39000.0;
@@ -284,6 +283,7 @@ void main()	{
           color += vec4(disk_color, 1.0)*disk_alpha;
           
           }
+          break; // Make the disk opaque
         }
       }
     }
