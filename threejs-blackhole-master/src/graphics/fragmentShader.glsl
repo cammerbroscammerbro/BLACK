@@ -211,6 +211,9 @@ void main()	{
           // use blackbody 
           float disk_temperature = 10000.0*(pow(r/DISK_IN, -3.0/4.0));
           
+          // gravitational redshift
+          disk_temperature *= sqrt(1.0 - 1.0/r);
+
             //doppler effect
           if (doppler_shift)
             disk_temperature /= ray_doppler_factor*disk_doppler_factor;
